@@ -1,0 +1,51 @@
+* {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+
+body {
+	font-family:
+		-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+		Arial, sans-serif;
+	background: #fff;
+	color: #333;
+}
+
+#app {
+	width: 100%;
+	height: 100vh;
+	padding: 16px 20px 12px 20px;
+	display: flex;
+	flex-direction: column;
+}
+
+#header {
+	margin-bottom: 8px;
+	flex-shrink: 0;
+}
+
+#chart-title {
+	font-size: 18px;
+	font-weight: 700;
+	color: #333;
+	margin-bottom: 2px;
+}
+
+#chart-total .amount {
+	font-weight: 700;
+	font-size: 20px;
+	color: #333;
+}
+
+#chart-total .label {
+	font-weight: 400;
+	font-size: 14px;
+	color: #666;
+	margin-left: 6px;
+}
+
+#chart {
+	flex: 1;
+	overflow: hidden;
+}
