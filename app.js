@@ -154,8 +154,8 @@ function computeGrowth(rows, periodColumn, categoryColumn) {
 		value: categoryTotals[category]
 	}));
 
-	// Sort by absolute value descending (largest bars at top)
-	results.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+	// Sort by value descending
+	results.sort((a, b) => b.value - a.value);
 
 	return results;
 }
@@ -224,7 +224,13 @@ function renderChart(data) {
 	const options = {
 		width: container.clientWidth || 600,
 		height: container.clientHeight || 400,
-		colors: [COLORS.negative, COLORS.positive]
+		colors: [COLORS.positive, COLORS.negative],
+		properties: {
+			datalabel_use_scale_abbrev: 'true',
+			datalabel_use_scale_format: 'true',
+			datalabel_show_total: 'true',
+			datalabel_total_style: 'Medium'
+		}
 	};
 
 	chart = new Chart(CHART_TYPE.HORIZ_BAR, phoenixData, options);
