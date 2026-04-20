@@ -69,17 +69,11 @@ function formatTotal(value) {
 // ----------------------------------------------------------
 
 function getPeriodColumn(variableValue) {
-	return (
-		PERIOD_VARIABLE_TO_COLUMN[variableValue] ||
-		PERIOD_VARIABLE_TO_COLUMN[DEFAULT_PERIOD_VARIABLE]
-	);
+	return PERIOD_VARIABLE_TO_COLUMN[variableValue] || PERIOD_VARIABLE_TO_COLUMN[DEFAULT_PERIOD_VARIABLE];
 }
 
 function getCategoryColumn(variableValue) {
-	return (
-		CATEGORY_VARIABLE_TO_COLUMN[variableValue] ||
-		CATEGORY_VARIABLE_TO_COLUMN[DEFAULT_CATEGORY_VARIABLE]
-	);
+	return CATEGORY_VARIABLE_TO_COLUMN[variableValue] || CATEGORY_VARIABLE_TO_COLUMN[DEFAULT_CATEGORY_VARIABLE];
 }
 
 /**
@@ -185,16 +179,7 @@ function buildTitle(periodVariable, categoryVariable, rows, periodColumn) {
 	const periodLabel = periodVariable || 'Season Years';
 	const categoryLabel = categoryVariable || 'Category';
 
-	return (
-		periodLabel +
-		' ' +
-		minP +
-		' vs ' +
-		maxP +
-		' ' +
-		categoryLabel +
-		' Revenue Growth'
-	);
+	return periodLabel + ' ' + minP + ' vs ' + maxP + ' ' + categoryLabel + ' Revenue Growth';
 }
 
 // ----------------------------------------------------------
@@ -214,11 +199,7 @@ function renderChart(data) {
 			{ type: DATA_TYPE.STRING, name: 'Growth Type', mapping: MAPPING.SERIES },
 			{ type: DATA_TYPE.DOUBLE, name: 'Revenue Growth', mapping: MAPPING.VALUE }
 		],
-		rows: data.map((d) => [
-			d.category,
-			d.value >= 0 ? 'Growth' : 'Decline',
-			d.value
-		])
+		rows: data.map((d) => [d.category, d.value >= 0 ? 'Growth' : 'Decline', d.value])
 	};
 
 	const options = {
@@ -245,10 +226,7 @@ function renderChart(data) {
 function updateHeader(title, total) {
 	document.getElementById('chart-title').textContent = title;
 	document.getElementById('chart-total').innerHTML =
-		'<span class="amount">' +
-		formatTotal(total) +
-		'</span>' +
-		'<span class="label">Total</span>';
+		'<span class="amount">' + formatTotal(total) + '</span>' + '<span class="label">Total</span>';
 }
 
 function processAndRender(rows, periodVariable, categoryVariable) {
@@ -258,12 +236,7 @@ function processAndRender(rows, periodVariable, categoryVariable) {
 	const data = computeGrowth(rows, periodColumn, categoryColumn);
 	const total = data.reduce((sum, d) => sum + d.value, 0);
 	console.log(data);
-	const title = buildTitle(
-		periodVariable,
-		categoryVariable,
-		rows,
-		periodColumn
-	);
+	const title = buildTitle(periodVariable, categoryVariable, rows, periodColumn);
 
 	cachedData = data;
 	cachedTitle = title;
@@ -288,18 +261,13 @@ function loadAndRender() {
 // Listen for Domo variable changes
 domo.onVariablesUpdated((variables) => {
 	if (variables) {
-		if (variables['Season/Year/Fiscal_DL']) {
-			currentPeriodVariable = variables['Season/Year/Fiscal_DL'];
+		if (variables['Season/Year/Fiscal_DL'] && variables['Season/Year/Fiscal_DL'].parsedExpression) {
+			currentPeriodVariable = variables['Season/Year/Fiscal_DL'].parsedExpression.value;
 		}
-		if (variables['Cat/PL/Cat-PL_DL']) {
-			currentCategoryVariable = variables['Cat/PL/Cat-PL_DL'];
+		if (variables['Cat/PL/Cat-PL_DL'] && variables['Cat/PL/Cat-PL_DL'].parsedExpression) {
+			currentCategoryVariable = variables['Cat/PL/Cat-PL_DL'].parsedExpression.value;
 		}
 	}
-	loadAndRender();
-});
-
-// Listen for page filter changes – re-fetch (Query API respects page filters)
-domo.onFiltersUpdated(() => {
 	loadAndRender();
 });
 
