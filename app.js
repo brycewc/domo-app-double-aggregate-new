@@ -17,6 +17,15 @@
 /* global DomoPhoenix */
 const { Chart, CHART_TYPE, DATA_TYPE, MAPPING } = DomoPhoenix;
 
+// v6 debug: logs parent<->iframe messages (variable/filter updates) and HTTP traffic.
+// Toggle off by commenting these out once the app is stable.
+if (typeof Domo !== 'undefined' && Domo.debug && Domo.debug.enable) {
+	Domo.debug.enable('messages');
+	Domo.debug.enable('http');
+	Domo.debug.enable('variables');
+}
+console.log('[app] boot — ryuu version:', (typeof Domo !== 'undefined' && Domo.version) || 'unknown');
+
 const DATASET_ALIAS = 'revenue';
 
 const COLORS = {
@@ -77,19 +86,20 @@ function getCategoryColumn(variableValue) {
 }
 
 /**
- * Fetch data using domo.get with server-side aggregation.
+ * Fetch data using domo.data.query with server-side aggregation.
  * Groups by ouName + categoryColumn + period column, sums totalAmountUsd.
- * Excludes 'Warehouse Transfer/Placeholder' rows via 6chan filter.
+ * Excludes 'Warehouse Transfer/Placeholder' rows via chan filter.
  */
 function fetchData(periodColumn, categoryColumn) {
-	const fields = `ouName,${categoryColumn},${periodColumn},totalAmountUsd,chan`;
-	const groupby = `ouName,${categoryColumn},${periodColumn}`;
-	return domo.get(
-		`/data/v1/${DATASET_ALIAS}?fields=${fields}&groupby=${groupby}&filter=chan!='Warehouse Transfer/Placeholder'`,
-		{
-			format: 'array-of-objects'
-		}
-	);
+	const options = {
+		fields: ['ouName', categoryColumn, periodColumn, 'totalAmountUsd'],
+		groupBy: ['ouName', categoryColumn, periodColumn],
+		sum: ['totalAmountUsd'],
+		filter: "chan!='Warehouse Transfer/Placeholder'",
+		format: 'array-of-objects'
+	};
+	console.log('[app] fetchData — alias:', DATASET_ALIAS, 'options:', options);
+	return domo.data.query(DATASET_ALIAS, options);
 }
 
 /**
@@ -230,12 +240,17 @@ function updateHeader(title, total) {
 }
 
 function processAndRender(rows, periodVariable, categoryVariable) {
-	console.log(rows);
+	console.log(
+		'[app] processAndRender — rows:',
+		Array.isArray(rows) ? rows.length : typeof rows,
+		'sample:',
+		rows && rows[0]
+	);
 	const periodColumn = getPeriodColumn(periodVariable);
 	const categoryColumn = getCategoryColumn(categoryVariable);
 	const data = computeGrowth(rows, periodColumn, categoryColumn);
 	const total = data.reduce((sum, d) => sum + d.value, 0);
-	console.log(data);
+	console.log('[app] computeGrowth — categories:', data.length, 'total:', total, 'data:', data);
 	const title = buildTitle(periodVariable, categoryVariable, rows, periodColumn);
 
 	cachedData = data;
@@ -246,28 +261,77 @@ function processAndRender(rows, periodVariable, categoryVariable) {
 	renderChart(data);
 }
 
-function loadAndRender() {
+async function loadAndRender() {
 	const periodColumn = getPeriodColumn(currentPeriodVariable);
 	const categoryColumn = getCategoryColumn(currentCategoryVariable);
-	fetchData(periodColumn, categoryColumn).then((rows) => {
+	console.log(
+		'[app] loadAndRender — period:',
+		currentPeriodVariable,
+		'→',
+		periodColumn,
+		'| category:',
+		currentCategoryVariable,
+		'→',
+		categoryColumn
+	);
+	try {
+		const rows = await fetchData(periodColumn, categoryColumn);
 		processAndRender(rows, currentPeriodVariable, currentCategoryVariable);
-	});
+	} catch (err) {
+		// DomoAuthError must be checked before DomoHttpError — it extends DomoHttpError.
+		if (err instanceof Domo.DomoAuthError) {
+			console.error('Auth failed:', err.status, err.statusText);
+		} else if (err instanceof Domo.DomoHttpError) {
+			console.error('HTTP error:', err.status, err.statusText, err.body);
+		} else if (err instanceof Domo.DomoConnectionError) {
+			console.error('Network error:', err.message);
+		} else if (err instanceof Domo.DomoTimeoutError) {
+			console.error('Request timed out:', err.url);
+		} else if (err instanceof Domo.DomoValidationError) {
+			console.error('Validation error:', err.errors);
+		} else {
+			throw err;
+		}
+	}
 }
 
 // ----------------------------------------------------------
 // Init: event listeners + first load
 // ----------------------------------------------------------
 
-// Listen for Domo variable changes
+// Listen for Domo variable changes.
+// v6 passes an array of { name, value, functionId } — look up by name
+// so the app works across instances (functionIds differ per instance).
+const PERIOD_VARIABLE_NAME = 'Season/Year/Fiscal_DL';
+const CATEGORY_VARIABLE_NAME = 'Cat/PL/Cat-PL_DL';
+
 domo.onVariablesUpdated((variables) => {
-	if (variables) {
-		if (variables['14150'] && variables['14150'].parsedExpression) {
-			currentPeriodVariable = variables['14150'].parsedExpression.value;
-		}
-		if (variables['11603'] && variables['11603'].parsedExpression) {
-			currentCategoryVariable = variables['11603'].parsedExpression.value;
-		}
+	console.log('[app] onVariablesUpdated fired. payload type:', typeof variables, 'isArray:', Array.isArray(variables));
+	console.log('[app] raw variables:', variables);
+
+	if (Array.isArray(variables)) {
+		console.log(
+			'[app] variable names seen:',
+			variables.map((v) => v && v.name)
+		);
+		const periodVar = variables.find((v) => v.name === PERIOD_VARIABLE_NAME);
+		const categoryVar = variables.find((v) => v.name === CATEGORY_VARIABLE_NAME);
+		console.log('[app] periodVar match (' + PERIOD_VARIABLE_NAME + '):', periodVar);
+		console.log('[app] categoryVar match (' + CATEGORY_VARIABLE_NAME + '):', categoryVar);
+
+		if (periodVar) currentPeriodVariable = periodVar.value;
+		else console.warn('[app] period variable not found — check name spelling/casing in manifest.json');
+
+		if (categoryVar) currentCategoryVariable = categoryVar.value;
+		else console.warn('[app] category variable not found — check name spelling/casing in manifest.json');
+	} else {
+		console.warn('[app] variables payload is not an array — shape may differ from v6 docs.');
 	}
+	loadAndRender();
+});
+
+domo.onDataUpdated((alias) => {
+	// Triggered after parent applies filters — re-fetch here
 	loadAndRender();
 });
 
@@ -284,4 +348,10 @@ window.addEventListener('resize', () => {
 });
 
 // Initial load
+console.log(
+	'[app] initial loadAndRender — defaults period:',
+	currentPeriodVariable,
+	'category:',
+	currentCategoryVariable
+);
 loadAndRender();

@@ -1,6 +1,4 @@
 {
-  "id": "50212cf8-edee-487b-b212-abced08a1b71",
-  "proxyId": "c3457e06-6a3e-40c1-9053-5d729e36103b",
   "name": "domo-app-double-aggregate-new",
   "description": "",
   "version": "3.0.0",
@@ -11,7 +9,7 @@
   "datasetsMapping": [
     {
       "alias": "revenue",
-      "dataSetId": "5130f54a-198f-450a-a36b-5291228c41dc",
+      "dataSetId": "0949d180-ac43-4f4e-9b5e-3600533df341",
       "fields": [
         {
           "alias": "ouName",
