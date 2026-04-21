@@ -261,11 +261,11 @@ function loadAndRender() {
 // Listen for Domo variable changes
 domo.onVariablesUpdated((variables) => {
 	if (variables) {
-		if (variables['Season/Year/Fiscal_DL'] && variables['Season/Year/Fiscal_DL'].parsedExpression) {
-			currentPeriodVariable = variables['Season/Year/Fiscal_DL'].parsedExpression.value;
+		if (variables['14150'] && variables['14150'].parsedExpression) {
+			currentPeriodVariable = variables['14150'].parsedExpression.value;
 		}
-		if (variables['Cat/PL/Cat-PL_DL'] && variables['Cat/PL/Cat-PL_DL'].parsedExpression) {
-			currentCategoryVariable = variables['Cat/PL/Cat-PL_DL'].parsedExpression.value;
+		if (variables['11603'] && variables['11603'].parsedExpression) {
+			currentCategoryVariable = variables['11603'].parsedExpression.value;
 		}
 	}
 	loadAndRender();
