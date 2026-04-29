@@ -26,8 +26,8 @@
           "columnName": "Season Split Year Grouping"
         },
         {
-          "alias": "seasonSplitSort",
-          "columnName": "Season Split Sort"
+          "alias": "seasonSplit",
+          "columnName": "Season Split"
         },
         {
           "alias": "fiscalYear",

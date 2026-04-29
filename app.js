@@ -27,7 +27,7 @@ const COLORS = {
 // Map Domo variable values to the dataset column that determines periods
 const PERIOD_VARIABLE_TO_COLUMN = {
 	'Season Year': 'seasonSplitYearGrouping',
-	Season: 'seasonSplitSort',
+	Season: 'seasonSplit',
 	'Calendar Year': 'fiscalYear'
 };
 
@@ -44,6 +44,8 @@ const DEFAULT_CATEGORY_VARIABLE = 'Category';
 // Track current variables so event handlers can access them
 let currentPeriodVariable = DEFAULT_PERIOD_VARIABLE;
 let currentCategoryVariable = DEFAULT_CATEGORY_VARIABLE;
+// Page-level filters from onFiltersUpdated, merged into each query
+let currentPageFilters = [];
 // Cache last rendered data for resize
 let cachedData = null;
 let cachedTitle = '';
@@ -76,17 +78,78 @@ function getCategoryColumn(variableValue) {
 	return CATEGORY_VARIABLE_TO_COLUMN[variableValue] || CATEGORY_VARIABLE_TO_COLUMN[DEFAULT_CATEGORY_VARIABLE];
 }
 
+// Convert a page filter object from onFiltersUpdated into the
+// Domo filter expression DSL accepted by domo.data.query's `filter`
+// option, so it can be AND-ed with our hardcoded chan filter.
+function quoteValue(v, dataType) {
+	if (v === null || v === undefined) return 'null';
+	if (dataType === 'NUMBER' || dataType === 'DOUBLE' || dataType === 'LONG' || typeof v === 'number') {
+		return String(v);
+	}
+	return "'" + String(v).replace(/'/g, "''") + "'";
+}
+
+function pageFilterToExpr(f) {
+	if (!f || !f.column || !f.operator) return null;
+	const col = f.column;
+	const vals = f.values || [];
+	const dt = f.dataType;
+	const q = (v) => quoteValue(v, dt);
+	switch (f.operator) {
+		// Comparison
+		case 'EQUALS':
+			return col + '=' + q(vals[0]);
+		case 'NOT_EQUALS':
+			return col + '!=' + q(vals[0]);
+		case 'GREATER_THAN':
+			return col + '>' + q(vals[0]);
+		case 'GREAT_THAN_EQUALS_TO':
+			return col + '>=' + q(vals[0]);
+		case 'LESS_THAN':
+			return col + '<' + q(vals[0]);
+		case 'LESS_THAN_EQUALS_TO':
+			return col + '<=' + q(vals[0]);
+		case 'BETWEEN':
+			// No native BETWEEN operator — express as two comma-joined comparisons
+			if (vals.length < 2) return null;
+			return col + '>=' + q(vals[0]) + ',' + col + '<=' + q(vals[1]);
+		// List membership
+		case 'IN':
+			return vals.length ? col + ' in [' + vals.map(q).join(',') + ']' : null;
+		case 'NOT_IN':
+			return vals.length ? col + ' !in [' + vals.map(q).join(',') + ']' : null;
+		// Substring — DSL only has contains; STARTS_WITH/ENDS_WITH approximated
+		case 'CONTAINS':
+		case 'STARTS_WITH':
+		case 'ENDS_WITH':
+			return vals.length ? col + ' ~ ' + q(vals[0]) : null;
+		case 'NOT_CONTAINS':
+		case 'NOT_STARTS_WITH':
+		case 'NOT_ENDS_WITH':
+			return vals.length ? col + ' !~ ' + q(vals[0]) : null;
+		default:
+			return null;
+	}
+}
+
+function buildFilter() {
+	const base = "chan!='Warehouse Transfer/Placeholder'";
+	const extras = currentPageFilters.map(pageFilterToExpr).filter(Boolean);
+	return [base, ...extras].join(',');
+}
+
 /**
  * Fetch data using domo.data.query with server-side aggregation.
  * Groups by ouName + categoryColumn + period column, sums totalAmountUsd.
- * Excludes 'Warehouse Transfer/Placeholder' rows via chan filter.
+ * Combines the chan exclusion filter with any page-level filters so the
+ * chart respects dashboard filters.
  */
 function fetchData(periodColumn, categoryColumn) {
 	const options = {
 		fields: ['ouName', categoryColumn, periodColumn, 'totalAmountUsd'],
 		groupBy: ['ouName', categoryColumn, periodColumn],
 		sum: ['totalAmountUsd'],
-		filter: "chan!='Warehouse Transfer/Placeholder'",
+		filter: buildFilter(),
 		format: 'array-of-objects'
 	};
 	return domo.data.query(DATASET_ALIAS, options);
@@ -291,8 +354,10 @@ domo.onVariablesUpdated((variables) => {
 	loadAndRender();
 });
 
-domo.onDataUpdated((alias) => {
-	// Triggered after parent applies filters — re-fetch here
+domo.onDataUpdated((alias) => {});
+
+domo.onFiltersUpdated((filters) => {
+	currentPageFilters = Array.isArray(filters) ? filters : [];
 	loadAndRender();
 });
 
