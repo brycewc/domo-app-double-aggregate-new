@@ -46,6 +46,22 @@ let currentPeriodVariable = DEFAULT_PERIOD_VARIABLE;
 let currentCategoryVariable = DEFAULT_CATEGORY_VARIABLE;
 // Page-level filters from onFiltersUpdated, merged into each query
 let currentPageFilters = [];
+
+// Map raw dataset column names → manifest aliases. The Domo filter DSL
+// expects aliases (e.g. `chan`, not `6chan`); page filter events deliver
+// raw column names, so we translate before composing the filter string.
+const COLUMN_TO_ALIAS = {
+	OU_NAME: 'ouName',
+	TOTAL_AMOUNT_USD: 'totalAmountUsd',
+	'Season Split Year Grouping': 'seasonSplitYearGrouping',
+	'Season Split Sort': 'seasonSplit',
+	'Fiscal Year': 'fiscalYear',
+	CATEGORY: 'category',
+	PRODUCT_LINE: 'productLine',
+	'Category Product Line': 'categoryProductLine',
+	'6chan': 'chan'
+};
+
 // Cache last rendered data for resize
 let cachedData = null;
 let cachedTitle = '';
@@ -78,9 +94,6 @@ function getCategoryColumn(variableValue) {
 	return CATEGORY_VARIABLE_TO_COLUMN[variableValue] || CATEGORY_VARIABLE_TO_COLUMN[DEFAULT_CATEGORY_VARIABLE];
 }
 
-// Convert a page filter object from onFiltersUpdated into the
-// Domo filter expression DSL accepted by domo.data.query's `filter`
-// option, so it can be AND-ed with our hardcoded chan filter.
 function quoteValue(v, dataType) {
 	if (v === null || v === undefined) return 'null';
 	if (dataType === 'NUMBER' || dataType === 'DOUBLE' || dataType === 'LONG' || typeof v === 'number') {
@@ -89,14 +102,23 @@ function quoteValue(v, dataType) {
 	return "'" + String(v).replace(/'/g, "''") + "'";
 }
 
+// Translate one page filter event entry to a Domo filter DSL expression.
+// Returns null when the column isn't in the manifest (filter applies to a
+// column the app didn't request) or the operator/values are unusable.
 function pageFilterToExpr(f) {
-	if (!f || !f.column || !f.operator) return null;
-	const col = f.column;
+	if (!f || !f.column) return null;
+	// Different host contracts use `operator` or `operand` — accept either.
+	const op = f.operator || f.operand;
+	if (!op) return null;
+	const col = COLUMN_TO_ALIAS[f.column];
+	if (!col) {
+		console.log('[double-agg] skipping filter — column not in manifest:', f.column);
+		return null;
+	}
 	const vals = f.values || [];
 	const dt = f.dataType;
 	const q = (v) => quoteValue(v, dt);
-	switch (f.operator) {
-		// Comparison
+	switch (op) {
 		case 'EQUALS':
 			return col + '=' + q(vals[0]);
 		case 'NOT_EQUALS':
@@ -110,15 +132,12 @@ function pageFilterToExpr(f) {
 		case 'LESS_THAN_EQUALS_TO':
 			return col + '<=' + q(vals[0]);
 		case 'BETWEEN':
-			// No native BETWEEN operator — express as two comma-joined comparisons
 			if (vals.length < 2) return null;
 			return col + '>=' + q(vals[0]) + ',' + col + '<=' + q(vals[1]);
-		// List membership
 		case 'IN':
 			return vals.length ? col + ' in [' + vals.map(q).join(',') + ']' : null;
 		case 'NOT_IN':
 			return vals.length ? col + ' !in [' + vals.map(q).join(',') + ']' : null;
-		// Substring — DSL only has contains; STARTS_WITH/ENDS_WITH approximated
 		case 'CONTAINS':
 		case 'STARTS_WITH':
 		case 'ENDS_WITH':
@@ -141,8 +160,8 @@ function buildFilter() {
 /**
  * Fetch data using domo.data.query with server-side aggregation.
  * Groups by ouName + categoryColumn + period column, sums totalAmountUsd.
- * Combines the chan exclusion filter with any page-level filters so the
- * chart respects dashboard filters.
+ * Merges page filters into the filter string — the platform does not
+ * auto-merge them when an explicit `filter` is provided.
  */
 function fetchData(periodColumn, categoryColumn) {
 	const options = {
@@ -354,10 +373,20 @@ domo.onVariablesUpdated((variables) => {
 	loadAndRender();
 });
 
-domo.onDataUpdated((alias) => {});
+domo.onDataUpdated((alias) => {
+	console.log('[double-agg] onDataUpdated fired for alias:', alias);
+	loadAndRender();
+});
 
 domo.onFiltersUpdated((filters) => {
-	currentPageFilters = Array.isArray(filters) ? filters : [];
+	console.log('[double-agg] onFiltersUpdated raw payload:', JSON.stringify(filters));
+	let normalized = [];
+	if (Array.isArray(filters)) normalized = filters;
+	else if (filters && Array.isArray(filters.filters)) normalized = filters.filters;
+	else if (filters && typeof filters === 'object') normalized = Object.values(filters);
+	console.log('[double-agg] normalized filters:', JSON.stringify(normalized));
+	currentPageFilters = normalized;
+	console.log('[double-agg] composed filter string:', buildFilter());
 	loadAndRender();
 });
 
